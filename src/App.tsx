@@ -1,0 +1,216 @@
+import { useStore } from "./store/useStore";
+import LiveSessionProvider, { useLiveSession } from "./components/LiveSessionProvider";
+import Visualizer3D from "./components/Visualizer3D";
+import Controls from "./components/Controls";
+import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Sparkles, Eye, Shield, Cpu, Activity, Info, Heart } from "lucide-react";
+
+// KOMAL Status mapping for rich verbal subtitles & panels
+const STATUS_DESCRIPTIONS = {
+  disconnected: {
+    label: "OFFLINE",
+    sub: "Tap the phone below to ignite KOMAL",
+    accent: "bg-gray-500",
+  },
+  connecting: {
+    label: "COGNITIVE SYNAPSE SYNCING...",
+    sub: "Initializing neural pathways and teasing engines",
+    accent: "bg-yellow-400 font-bold tracking-widest animate-pulse",
+  },
+  listening: {
+    label: "AWAITING USER VOICE INPUT",
+    sub: "Go ahead, tell me something sweet or tease me...",
+    accent: "bg-emerald-500 animate-ping",
+  },
+  speaking: {
+    label: "KOMAL TRANSMITTING STATE",
+    sub: "Listen carefully, sweetie...",
+    accent: "bg-rose-500 animate-ping",
+  },
+  error: {
+    label: "NEXUS INTERRUPT",
+    sub: "Failing to build live Gemini stream. Reload!",
+    accent: "bg-red-500",
+  },
+};
+
+const GLOW_COLOR_BORDER_MAP: Record<string, string> = {
+  rose: "border-rose-500/20 shadow-rose-950/20",
+  cyan: "border-cyan-500/20 shadow-cyan-950/20",
+  amber: "border-amber-500/20 shadow-amber-950/20",
+  emerald: "border-emerald-500/20 shadow-emerald-950/20",
+  indigo: "border-indigo-500/20 shadow-indigo-950/20",
+  purple: "border-purple-500/20 shadow-purple-950/20",
+  fuchsia: "border-fuchsia-500/20 shadow-fuchsia-950/20",
+  orange: "border-orange-500/20 shadow-orange-950/20",
+  lime: "border-lime-500/20 shadow-lime-950/20",
+  sky: "border-sky-500/20 shadow-sky-950/20",
+  violet: "border-violet-500/20 shadow-violet-950/20",
+  yellow: "border-yellow-500/20 shadow-yellow-950/20",
+  slate: "border-slate-500/20 shadow-slate-950/20",
+};
+
+const GLOW_BG_COLORS: Record<string, { start: string; end: string; glow: string }> = {
+  rose: { start: "rgba(35, 3, 15, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(244, 63, 94, 0.14)" },
+  cyan: { start: "rgba(2, 20, 24, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(6, 182, 212, 0.14)" },
+  amber: { start: "rgba(24, 12, 2, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(245, 158, 11, 0.12)" },
+  emerald: { start: "rgba(2, 22, 10, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(16, 185, 129, 0.12)" },
+  indigo: { start: "rgba(8, 6, 32, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(99, 102, 241, 0.14)" },
+  purple: { start: "rgba(18, 5, 30, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(168, 85, 247, 0.14)" },
+  fuchsia: { start: "rgba(26, 3, 28, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(217, 70, 239, 0.14)" },
+  orange: { start: "rgba(35, 15, 2, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(249, 115, 22, 0.12)" },
+  lime: { start: "rgba(12, 28, 2, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(132, 204, 22, 0.12)" },
+  sky: { start: "rgba(2, 18, 30, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(14, 165, 233, 0.14)" },
+  violet: { start: "rgba(15, 5, 32, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(139, 92, 246, 0.14)" },
+  yellow: { start: "rgba(28, 24, 2, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(234, 179, 8, 0.12)" },
+  slate: { start: "rgba(18, 20, 24, 0.45)", end: "rgba(1, 1, 3, 1)", glow: "rgba(100, 116, 139, 0.12)" },
+};
+
+function Dashboard() {
+  const { startCall, endCall, analyserNode, videoRef } = useLiveSession();
+  const status = useStore((state) => state.status);
+  const glowColor = useStore((state) => state.glowColor);
+  const isCameraActive = useStore((state) => state.isCameraActive);
+  const sifraTranscript = useStore((state) => state.sifraTranscript);
+  const memory = useStore((state) => state.memory);
+
+  const [welcomeAlert, setWelcomeAlert] = useState(true);
+
+  // Auto clean-up alert
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setWelcomeAlert(false);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const currentDesc = STATUS_DESCRIPTIONS[status] || STATUS_DESCRIPTIONS.disconnected;
+  const isConnected = status !== "disconnected" && status !== "error";
+  const borderClass = GLOW_COLOR_BORDER_MAP[glowColor] || GLOW_COLOR_BORDER_MAP.rose;
+  const bgTheme = GLOW_BG_COLORS[glowColor] || GLOW_BG_COLORS.rose;
+
+  return (
+    <div 
+      id="sifra-applet-root" 
+      className="relative w-screen h-screen overflow-hidden text-white flex flex-col justify-between p-10 select-none transition-all duration-1000"
+      style={{
+        background: "#000000"
+      }}
+    >
+        {/* Dynamic ambient moving soft halo background rings */}
+        <div 
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[640px] h-[640px] rounded-full blur-[130px] opacity-25 pointer-events-none transition-all duration-1000 z-0"
+          style={{
+            background: `radial-gradient(circle, ${bgTheme.glow} 0%, transparent 70%)`
+          }}
+        />
+        
+        {/* Secondary subtle offset drift glow for background volume */}
+        <div 
+          className="absolute top-10 left-10 w-96 h-96 rounded-full blur-[140px] opacity-15 pointer-events-none transition-all duration-1000 z-0"
+          style={{
+            background: `radial-gradient(circle, ${bgTheme.glow} 0%, transparent 70%)`
+          }}
+        />
+
+        {/* 1. Top Gap/Spacer (Header) */}
+        <div className="h-6 w-full max-w-5xl mx-auto z-30 shrink-0" />
+
+        {/* 2. SIFRA Cognitive Center (Three.js 3D Orb canvas) */}
+        <main className="flex-grow flex flex-col items-center justify-center relative w-full max-w-5xl mx-auto z-20 gap-3 min-h-0">
+          <Visualizer3D analyser={analyserNode} />
+        </main>
+
+        {/* Live HUD activity nodes in the bottom-left corner */}
+        <div id="sifra-status-hud" className="absolute bottom-10 left-10 z-50 pointer-events-auto">
+          <div 
+            style={{ letterSpacing: '2px' }}
+            className="text-[10px] font-mono uppercase bg-white/10 px-3.5 py-1.5 rounded-full border border-white/20 text-gray-300 flex items-center gap-2 tracking-widest backdrop-blur-md shadow-lg"
+          >
+            <span className={`w-2 h-2 rounded-full ${currentDesc.accent}`} />
+            {currentDesc.label}
+          </div>
+        </div>
+
+        {/* 3. Floating structures (Webcam, welcoming tips) */}
+        {/* Local floating Glassmorphic Webcam preview block */}
+        <div id="corner-float-container" className="absolute bottom-28 right-10 z-40 pointer-events-none">
+          <AnimatePresence>
+            {isCameraActive && isConnected && (
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0, y: 30 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.8, opacity: 0, y: 30 }}
+                className="p-1.5 w-44 h-28 bg-black rounded-xl overflow-hidden pointer-events-auto border border-white/10 shadow-2xl relative"
+              >
+                <div className="relative w-full h-full bg-black/95 rounded-lg overflow-hidden">
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full object-cover scale-x-[-1]"
+                    muted
+                    playsInline
+                  />
+                  <div style={{ letterSpacing: '1px' }} className="absolute top-2 left-2 flex items-center gap-1 bg-rose-500/80 px-1.5 py-0.5 rounded text-[8px] font-mono uppercase tracking-widest">
+                    Vision: ACTIVE
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Floater memory visual indicator */}
+        {memory.name && isConnected && (
+          <div id="sifra-memory-floater" className="absolute top-24 left-10 z-30 hidden lg:block">
+            <div className={`glass-panel py-2.5 px-3.5 rounded-2xl border ${borderClass} shadow-xl flex items-center gap-2.5 max-w-xs`}>
+              <Heart className="w-4 h-4 text-rose-400 fill-rose-500/20 shrink-0" />
+              <div className="flex flex-col">
+                <span className="text-[10px] font-mono text-gray-500 uppercase">Recognized User</span>
+                <span className="text-xs font-semibold text-white tracking-wide truncate">
+                  {memory.name}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Subtle flirty welcoming card on first applet boot */}
+        <div id="sifra-welcome-badge" className="absolute top-24 right-10 z-30 pointer-events-none hidden md:block">
+          <AnimatePresence>
+            {welcomeAlert && (
+              <motion.div
+                initial={{ opacity: 0, x: 30 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 30 }}
+                className="glass-panel py-3 px-4 rounded-2xl border border-white/5 shadow-2xl max-w-xs flex gap-3"
+              >
+                <Cpu className="w-5 h-5 text-pink-400 shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-1">
+                  <h4 className="text-xs font-bold tracking-wide text-white uppercase font-sans">
+                    KOMAL is Online
+                  </h4>
+                  <p className="text-[11px] text-gray-400 leading-normal font-sans">
+                    Hello! Tap the pink glowing phone to start flirting with KOMAL. Support vision by toggling camera.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* 4. Glass Control Dock (Footer) */}
+        <footer className="w-full max-w-5xl mx-auto flex flex-col gap-4 z-30 shrink-0">
+          <Controls onStartCall={startCall} onEndCall={endCall} />
+        </footer>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <LiveSessionProvider>
+      <Dashboard />
+    </LiveSessionProvider>
+  );
+}

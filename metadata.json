@@ -1,0 +1,6 @@
+{
+  "name": "KOMAL AI Assistant",
+  "description": "Smart, Intuitive, Flirty, Reactive voice and vision AI Assistant named KOMAL, powered by Gemini Live Multimodal API.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
