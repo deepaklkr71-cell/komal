@@ -7,6 +7,7 @@ interface LiveSessionContextType {
   endCall: () => void;
   analyserNode: AnalyserNode | null;
   videoRef: React.RefObject<HTMLVideoElement | null>;
+  sendTextMessage: (text: string) => void;
 }
 
 const LiveSessionContext = createContext<LiveSessionContextType | null>(null);
@@ -55,6 +56,11 @@ export default function LiveSessionProvider({ children }: { children: React.Reac
     setStatus("connecting");
     setUserTranscript("");
     setSifraTranscript("");
+    useStore.getState().clearMessages();
+    useStore.getState().setChatOpen(true);
+
+    let currentKomalText = "";
+    let currentUserText = "";
 
     const streamer = getAudioStreamer();
 
@@ -111,20 +117,43 @@ export default function LiveSessionProvider({ children }: { children: React.Reac
           
           if (msg.type === "session_established") {
             setStatus("listening");
+            currentKomalText = "";
+            currentUserText = "";
           } else if (msg.type === "audio") {
             // Play conversational chunk from SIFRA
             setStatus("speaking");
             streamer.playAudioChunk(msg.data);
           } else if (msg.type === "transcription") {
             // Live subtitling transcript text
-            setSifraTranscript(msg.text);
+            currentKomalText += msg.text;
+            setSifraTranscript(currentKomalText);
+            useStore.getState().updateLiveMessage("komal", currentKomalText, true);
+          } else if (msg.type === "user_transcription") {
+            // Live user voice transcription
+            currentUserText += msg.text;
+            setUserTranscript(currentUserText);
+            useStore.getState().updateLiveMessage("user", currentUserText, true);
           } else if (msg.type === "interrupted") {
             console.log("Server interrupted SIFRA's output playback.");
             streamer.stopPlayback();
             setStatus("listening");
+            useStore.getState().updateLiveMessage("komal", currentKomalText ? (`${currentKomalText} [interrupted]`) : "...", false);
             setSifraTranscript("");
+            setUserTranscript("");
+            currentKomalText = "";
+            currentUserText = "";
           } else if (msg.type === "turnComplete") {
             setStatus("listening");
+            if (currentKomalText) {
+              useStore.getState().updateLiveMessage("komal", currentKomalText, false);
+            }
+            if (currentUserText) {
+              useStore.getState().updateLiveMessage("user", currentUserText, false);
+            }
+            setSifraTranscript("");
+            setUserTranscript("");
+            currentKomalText = "";
+            currentUserText = "";
           } else if (msg.type === "toolCall") {
             // Executing client-side tools/functions from SIFRA
             handleClientToolCall(msg.name, msg.args);
@@ -306,6 +335,20 @@ export default function LiveSessionProvider({ children }: { children: React.Reac
     }
   };
 
+  // 4. Send Custom Typed Text Messages to KOMAL Live
+  const sendTextMessage = (text: string) => {
+    if (!text.trim()) return;
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      // Append user message immediately
+      useStore.getState().addMessage("user", text, false);
+      // Sync userTranscript text
+      setUserTranscript(text);
+      // Send to backend via text type payload
+      ws.send(JSON.stringify({ type: "text", text }));
+    }
+  };
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -314,7 +357,7 @@ export default function LiveSessionProvider({ children }: { children: React.Reac
   }, []);
 
   return (
-    <LiveSessionContext.Provider value={{ startCall, endCall, analyserNode, videoRef }}>
+    <LiveSessionContext.Provider value={{ startCall, endCall, analyserNode, videoRef, sendTextMessage }}>
       {children}
     </LiveSessionContext.Provider>
   );

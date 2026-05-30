@@ -6,6 +6,14 @@ interface UserMemory {
   dislikes?: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  sender: "user" | "komal";
+  text: string;
+  timestamp: string;
+  isStreaming?: boolean;
+}
+
 export type SifraStatus = "disconnected" | "connecting" | "listening" | "speaking" | "error";
 
 interface SifraState {
@@ -16,6 +24,8 @@ interface SifraState {
   userTranscript: string;
   sifraTranscript: string;
   memory: UserMemory;
+  messages: ChatMessage[];
+  isChatOpen: boolean;
   
   // Actions
   setStatus: (status: SifraStatus) => void;
@@ -24,7 +34,11 @@ interface SifraState {
   setGlowColor: (color: string) => void;
   setUserTranscript: (text: string) => void;
   setSifraTranscript: (text: string) => void;
+  setChatOpen: (open: boolean) => void;
   saveMemory: (updated: Partial<UserMemory>) => void;
+  addMessage: (sender: "user" | "komal", text: string, isStreaming?: boolean) => void;
+  updateLiveMessage: (sender: "user" | "komal", text: string, isStreaming?: boolean) => void;
+  clearMessages: () => void;
   resetState: () => void;
 }
 
@@ -49,6 +63,8 @@ export const useStore = create<SifraState>((set) => ({
   userTranscript: "",
   sifraTranscript: "",
   memory: loadMemory(),
+  messages: [],
+  isChatOpen: typeof window !== "undefined" ? window.innerWidth > 1024 : true,
 
   setStatus: (status) => set({ status }),
   setMicActive: (isMicActive) => set({ isMicActive }),
@@ -56,6 +72,7 @@ export const useStore = create<SifraState>((set) => ({
   setGlowColor: (glowColor) => set({ glowColor }),
   setUserTranscript: (userTranscript) => set({ userTranscript }),
   setSifraTranscript: (sifraTranscript) => set({ sifraTranscript }),
+  setChatOpen: (isChatOpen) => set({ isChatOpen }),
   
   saveMemory: (updated) => set((state) => {
     const newMemory = { ...state.memory, ...updated };
@@ -67,9 +84,47 @@ export const useStore = create<SifraState>((set) => ({
     return { memory: newMemory };
   }),
 
+  addMessage: (sender, text, isStreaming = false) => set((state) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    const newMessage: ChatMessage = {
+      id,
+      sender,
+      text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isStreaming,
+    };
+    return { messages: [...state.messages, newMessage] };
+  }),
+
+  updateLiveMessage: (sender, text, isStreaming = true) => set((state) => {
+    const lastMsg = state.messages[state.messages.length - 1];
+    if (lastMsg && lastMsg.sender === sender && lastMsg.isStreaming) {
+      const updatedMessages = [...state.messages];
+      updatedMessages[updatedMessages.length - 1] = {
+        ...lastMsg,
+        text,
+        isStreaming,
+      };
+      return { messages: updatedMessages };
+    } else {
+      const id = Math.random().toString(36).substring(2, 9);
+      const newMessage: ChatMessage = {
+        id,
+        sender,
+        text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isStreaming,
+      };
+      return { messages: [...state.messages, newMessage] };
+    }
+  }),
+
+  clearMessages: () => set({ messages: [] }),
+
   resetState: () => set({
     status: "disconnected",
     userTranscript: "",
     sifraTranscript: "",
+    messages: [],
   }),
 }));

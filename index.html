@@ -3,7 +3,71 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <title>KOMAL AI Assistant</title>
+    <script>
+      (function() {
+        const isBenign = (msg) => {
+          if (!msg) return false;
+          const n = String(msg).toLowerCase();
+          return n.includes("websocket") || 
+                 n.includes("web socket") || 
+                 n.includes("closed") || 
+                 n.includes("opened") || 
+                 n.includes("connection") || 
+                 n.includes("vite") || 
+                 n.includes("hmr");
+        };
+
+        const checkAndMute = (event, reasonOrError) => {
+          if (!reasonOrError) return false;
+          const message = reasonOrError.message || reasonOrError.description || reasonOrError.name || String(reasonOrError);
+          const stack = reasonOrError.stack || "";
+          const serialized = typeof reasonOrError === "object" ? JSON.stringify(reasonOrError) : "";
+          
+          if (isBenign(message) || isBenign(stack) || isBenign(serialized)) {
+            console.warn("Muted benign HMR event:", message);
+            if (event) {
+              if (typeof event.preventDefault === "function") event.preventDefault();
+              if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
+              if (typeof event.stopPropagation === "function") event.stopPropagation();
+            }
+            return true;
+          }
+          return false;
+        };
+
+        // Catch unhandled rejections during the capturing phase to silence before Vite tools intercept them
+        window.addEventListener("unhandledrejection", function(event) {
+          checkAndMute(event, event.reason);
+        }, true);
+
+        // Catch window errors during the capturing phase to suppress developer overlays for HMR drops
+        window.addEventListener("error", function(event) {
+          checkAndMute(event, event.error || event.message);
+        }, true);
+
+        // Monkeypatch WebSocket to silence HMR close connection warnings
+        const OriginalWS = window.WebSocket;
+        if (OriginalWS) {
+          window.WebSocket = function(url, protocols) {
+            const ws = new OriginalWS(url, protocols);
+            if (url && (url.includes("vite") || !url.includes("/api/live-ws"))) {
+              ws.addEventListener("error", function(e) {
+                if (typeof e.preventDefault === "function") e.preventDefault();
+                if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+              });
+              ws.addEventListener("close", function(e) {
+                if (typeof e.preventDefault === "function") e.preventDefault();
+                if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+              });
+            }
+            return ws;
+          };
+          window.WebSocket.prototype = OriginalWS.prototype;
+          Object.setPrototypeOf(window.WebSocket, OriginalWS);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -26,6 +26,9 @@ class SifraParticle {
   x: number = 0;
   y: number = 0;
   z: number = 0;
+  hx: number = 0;
+  hy: number = 0;
+  hz: number = 0;
   theta: number;
   phi: number;
   baseR: number;
@@ -47,6 +50,14 @@ class SifraParticle {
     this.isAccent = Math.random() > 0.65;
     
     this.recalculate();
+
+    // Parametric 3D Heart coordinates for morphing transformation
+    const t = this.theta;
+    const heartScale = radius * 0.052; // relative scale matching sphere
+    this.hx = 15 * Math.pow(Math.sin(t), 3) * heartScale;
+    this.hy = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)) * heartScale;
+    // Volumetric Z depth
+    this.hz = Math.cos(this.phi) * radius * 0.42;
   }
 
   recalculate() {
@@ -55,10 +66,16 @@ class SifraParticle {
     this.z = this.baseR * Math.cos(this.phi);
   }
 
-  update(time: number, status: SifraStatus, normLevel: number) {
+  update(time: number, status: SifraStatus, normLevel: number, heartActive: boolean) {
     let r = this.baseR;
 
-    if (status === "connecting") {
+    if (heartActive) {
+      // Rapid heart rate double-beat lub-dub rhythm
+      const beat = time * 8.5;
+      const heartPulse = Math.max(0, Math.sin(beat)) * 0.62 + Math.max(0, Math.sin(beat * 2 - Math.PI / 2)) * 0.38;
+      const pulsingRadius = heartPulse * 16.5 * (1.0 + normLevel * 1.5);
+      r = this.baseR + pulsingRadius;
+    } else if (status === "connecting") {
       // Swirling cosmic wormhole vortex
       const wave = Math.sin(time * 9.0 + this.baseR * 0.05) * 14;
       r = this.baseR + wave;
@@ -83,11 +100,119 @@ class SifraParticle {
   }
 }
 
+class FloatingHeart2D {
+  x: number;
+  y: number;
+  sz: number;
+  speedY: number;
+  speedX: number;
+  alpha: number;
+  rot: number;
+  rotSpeed: number;
+
+  constructor(centerX: number, centerY: number) {
+    this.x = centerX + (Math.random() - 0.5) * 60;
+    this.y = centerY + (Math.random() - 0.5) * 60;
+    this.sz = 5 + Math.random() * 9;
+    this.speedY = -(1.1 + Math.random() * 1.5);
+    this.speedX = (Math.random() - 0.5) * 0.8;
+    this.alpha = 1.0;
+    this.rot = (Math.random() - 0.5) * 0.6;
+    this.rotSpeed = (Math.random() - 0.5) * 0.05;
+  }
+
+  update() {
+    this.y += this.speedY;
+    this.x += this.speedX;
+    this.rot += this.rotSpeed;
+    this.alpha -= 0.012; // slow premium fade out
+  }
+
+  draw(ctx: CanvasRenderingContext2D) {
+    if (this.alpha <= 0) return;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.globalAlpha = this.alpha;
+    ctx.fillStyle = `rgba(244, 63, 94, ${this.alpha * 0.8})`; // beautiful warm rose/pink
+    
+    // Smooth parametric vector heart path
+    ctx.beginPath();
+    const d = this.sz;
+    ctx.moveTo(0, -d / 4);
+    ctx.bezierCurveTo(-d / 2, -d / 2, -d, -d / 4, -d, d / 4);
+    ctx.bezierCurveTo(-d, d * 0.7, -d / 4, d * 0.9, 0, d);
+    ctx.bezierCurveTo(d / 4, d * 0.9, d, d * 0.7, d, d / 4);
+    ctx.bezierCurveTo(d, -d / 4, d / 2, -d / 2, 0, -d / 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 export default function Visualizer3D({ analyser }: Visualizer3DProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const status = useStore((state) => state.status);
   const glowColor = useStore((state) => state.glowColor);
+  const userTranscript = useStore((state) => state.userTranscript);
+  const sifraTranscript = useStore((state) => state.sifraTranscript);
+
+  // Mutable refs to keep high density rendering loop completely fluid
+  const heartActiveRef = useRef(false);
+  const lastProcessedUserText = useRef("");
+  const lastProcessedSifraText = useRef("");
+  const heartTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Monitor transcripts for emotive keywords to trigger the romantic state
+  useEffect(() => {
+    const checkEmotiveTrigger = (text: string) => {
+      if (!text) return false;
+      const lowerText = text.toLowerCase();
+      const loveKeywords = [
+        "love", "kiss", "muah", "chumma", "pyaar", "pyar", "dil", "heart", 
+        "mohabat", "mohabbat", "jaan", "sweet", "honey", "sassy", "flirt", 
+        "cute", "प्यार", "मोहब्बत", "चूमना", "दिलों", "दिल", "इश्क", "ishq"
+      ];
+      return loveKeywords.some((word) => lowerText.includes(word));
+    };
+
+    let triggerEffect = false;
+
+    if (userTranscript && userTranscript !== lastProcessedUserText.current) {
+      lastProcessedUserText.current = userTranscript;
+      if (checkEmotiveTrigger(userTranscript)) {
+        triggerEffect = true;
+      }
+    }
+
+    if (sifraTranscript && sifraTranscript !== lastProcessedSifraText.current) {
+      lastProcessedSifraText.current = sifraTranscript;
+      if (checkEmotiveTrigger(sifraTranscript)) {
+        triggerEffect = true;
+      }
+    }
+
+    if (triggerEffect) {
+      if (heartTimerRef.current) {
+        clearTimeout(heartTimerRef.current);
+      }
+      heartActiveRef.current = true;
+
+      // Retain the heart morph layout for 7 seconds, then morph back
+      heartTimerRef.current = setTimeout(() => {
+        heartActiveRef.current = false;
+      }, 7000);
+    }
+  }, [userTranscript, sifraTranscript]);
+
+  useEffect(() => {
+    return () => {
+      if (heartTimerRef.current) {
+        clearTimeout(heartTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -115,6 +240,9 @@ export default function Visualizer3D({ analyser }: Visualizer3DProps) {
       particles.push(new SifraParticle(baseSphereRadius));
     }
 
+    // List of 2D drifting romantic hearts
+    const floatingHeartsList: FloatingHeart2D[] = [];
+
     // Interactive mouse rotation tracking
     let targetX = 0;
     let targetY = 0;
@@ -130,17 +258,35 @@ export default function Visualizer3D({ analyser }: Visualizer3DProps) {
     };
     container.addEventListener("mousemove", onMouseMove);
 
+    // Click canvas to trigger heart-rate as a responsive Easter-egg
+    const onCanvasClick = () => {
+      if (heartTimerRef.current) {
+        clearTimeout(heartTimerRef.current);
+      }
+      heartActiveRef.current = true;
+      heartTimerRef.current = setTimeout(() => {
+        heartActiveRef.current = false;
+      }, 7000);
+    };
+    canvas.addEventListener("click", onCanvasClick);
+
     // Responsive Canvas Resize logic
     const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width: newWidth, height: newHeight } = entry.contentRect;
-        if (newWidth && newHeight) {
+      if (!entries || entries.length === 0) return;
+      const entry = entries[0];
+      const { width: newWidth, height: newHeight } = entry.contentRect;
+      if (newWidth && newHeight) {
+        requestAnimationFrame(() => {
+          if (!canvas) return;
           width = newWidth;
           height = newHeight;
           canvas.width = newWidth * window.devicePixelRatio;
           canvas.height = newHeight * window.devicePixelRatio;
-          ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-        }
+          const currentCtx = canvas.getContext("2d");
+          if (currentCtx) {
+            currentCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+          }
+        });
       }
     });
     resizeObserver.observe(container);
@@ -150,6 +296,7 @@ export default function Visualizer3D({ analyser }: Visualizer3DProps) {
 
     let animationFrameId = 0;
     let time = 0;
+    let morphFactor = 0;
 
     // Sort particles with depth buffer for beautiful layered occlusion
     const zDepthBuffer: { p: SifraParticle; rotX: number; rotY: number; zProjected: number }[] = [];
@@ -173,14 +320,15 @@ export default function Visualizer3D({ analyser }: Visualizer3DProps) {
 
       // Metrobic speed tracking based on Status
       let speedFactor = 0.0075;
-      if (status === "connecting") speedFactor = 0.045;
+      if (heartActiveRef.current) speedFactor = 0.015; // accelerated pulse speed
+      else if (status === "connecting") speedFactor = 0.045;
       else if (status === "speaking") speedFactor = 0.012;
       else if (status === "listening") speedFactor = 0.0095;
 
       const increment = speedFactor * (1.0 + normLevel * 0.85);
       time += increment;
 
-      // Mouse Lerp positioning for cinematic parallax (increased responsiveness of tracking speed)
+      // Mouse Lerp positioning for cinematic parallax
       currentX += (targetX - currentX) * 0.18;
       currentY += (targetY - currentY) * 0.18;
 
@@ -198,19 +346,28 @@ export default function Visualizer3D({ analyser }: Visualizer3DProps) {
 
       const activeRGB = RGB_COLOR_MAP[glowColor] || RGB_COLOR_MAP.rose;
 
+      // Heart shape interpolation speed (morphing equation)
+      const targetMorph = heartActiveRef.current ? 1.0 : 0.0;
+      morphFactor += (targetMorph - morphFactor) * 0.075;
+
       // Clear & rebuild depth buffer
       zDepthBuffer.length = 0;
 
       for (let i = 0; i < numParticles; i++) {
         const p = particles[i];
-        p.update(time, status, normLevel);
+        p.update(time, status, normLevel, heartActiveRef.current);
 
-        // 3D rotations around Y and X axes
-        const x1 = p.x * cosY - p.z * sinY;
-        const z1 = p.z * cosY + p.x * sinY;
+        // Linear interpolation coordinates for 3D sphere -> romantic heart shape morphing
+        const px = p.x * (1 - morphFactor) + p.hx * morphFactor;
+        const py = p.y * (1 - morphFactor) + p.hy * morphFactor;
+        const pz = p.z * (1 - morphFactor) + p.hz * morphFactor;
 
-        const y1 = p.y * cosX - z1 * sinX;
-        const z2 = z1 * cosX + p.y * sinX;
+        // 3D rotations around Y and X axes on interpolated coordinates
+        const x1 = px * cosY - pz * sinY;
+        const z1 = pz * cosY + px * sinY;
+
+        const y1 = py * cosX - z1 * sinX;
+        const z2 = z1 * cosX + py * sinX;
 
         zDepthBuffer.push({ p, rotX: x1, rotY: y1, zProjected: z2 });
       }
@@ -232,15 +389,45 @@ export default function Visualizer3D({ analyser }: Visualizer3DProps) {
           const depthAlpha = Math.min(1.0, Math.max(0.08, scale));
           const finalAlpha = depthAlpha * p.brightnessMult;
 
-          if (p.isAccent) {
-            ctx.fillStyle = `rgba(${activeRGB}, ${finalAlpha})`;
+          // Smooth pink & hot-rose gradient color shift when morphed
+          if (morphFactor > 0.02) {
+            if (p.isAccent) {
+              const gVal = Math.floor(40 + 70 * (1 - morphFactor));
+              const bVal = Math.floor(95 + 45 * (1 - morphFactor));
+              ctx.fillStyle = `rgba(255, ${gVal}, ${bVal}, ${finalAlpha})`;
+            } else {
+              const gVal = Math.floor(165 + 75 * (1 - morphFactor));
+              const bVal = Math.floor(190 + 52 * (1 - morphFactor));
+              ctx.fillStyle = `rgba(255, ${gVal}, ${bVal}, ${finalAlpha * 0.9})`;
+            }
           } else {
-            // Sand white dust texture particles
-            ctx.fillStyle = `rgba(240, 242, 255, ${finalAlpha * 0.9})`;
+            // Standard chosen theme state
+            if (p.isAccent) {
+              ctx.fillStyle = `rgba(${activeRGB}, ${finalAlpha})`;
+            } else {
+              // Sand white dust texture particles
+              ctx.fillStyle = `rgba(240, 242, 255, ${finalAlpha * 0.9})`;
+            }
           }
 
           // Optimized rendering using quick square sand grains for retro-digital styling
           ctx.fillRect(px - size / 2, py - size / 2, size, size);
+        }
+      }
+
+      // Periodically spawn beautiful drifting 2D hearts during the hyper-emotive state
+      if (heartActiveRef.current && Math.random() < 0.12) {
+        floatingHeartsList.push(new FloatingHeart2D(centerX, centerY));
+      }
+
+      // Draw and cycle drifting custom 2D heart particles
+      for (let i = floatingHeartsList.length - 1; i >= 0; i--) {
+        const fh = floatingHeartsList[i];
+        fh.update();
+        if (fh.alpha <= 0) {
+          floatingHeartsList.splice(i, 1);
+        } else {
+          fh.draw(ctx);
         }
       }
     };
@@ -250,6 +437,7 @@ export default function Visualizer3D({ analyser }: Visualizer3DProps) {
     return () => {
       cancelAnimationFrame(animationFrameId);
       container.removeEventListener("mousemove", onMouseMove);
+      canvas.removeEventListener("click", onCanvasClick);
       resizeObserver.disconnect();
     };
   }, [analyser, status, glowColor]);

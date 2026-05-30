@@ -2,11 +2,28 @@ import { useStore } from "./store/useStore";
 import LiveSessionProvider, { useLiveSession } from "./components/LiveSessionProvider";
 import Visualizer3D from "./components/Visualizer3D";
 import Controls from "./components/Controls";
+import ChatConsole from "./components/ChatConsole";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sparkles, Eye, Shield, Cpu, Activity, Info, Heart } from "lucide-react";
 
 // KOMAL Status mapping for rich verbal subtitles & panels
+const TOGGLE_BUTTON_THEME_MAP: Record<string, string> = {
+  rose: "bg-rose-500/10 border-rose-500/30 text-rose-300 shadow-rose-950/20",
+  cyan: "bg-cyan-500/10 border-cyan-500/30 text-cyan-300 shadow-cyan-950/20",
+  amber: "bg-amber-500/10 border-amber-500/30 text-amber-300 shadow-amber-950/20",
+  emerald: "bg-emerald-500/10 border-emerald-500/30 text-emerald-300 shadow-emerald-950/20",
+  indigo: "bg-indigo-500/10 border-indigo-500/30 text-indigo-300 shadow-indigo-950/20",
+  purple: "bg-purple-500/10 border-purple-500/30 text-purple-300 shadow-purple-950/20",
+  fuchsia: "bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-300 shadow-fuchsia-950/20",
+  orange: "bg-orange-500/10 border-orange-500/30 text-orange-300 shadow-orange-950/20",
+  lime: "bg-lime-500/10 border-lime-500/30 text-lime-300 shadow-lime-950/20",
+  sky: "bg-sky-500/10 border-sky-500/30 text-sky-300 shadow-sky-950/20",
+  violet: "bg-violet-500/10 border-violet-500/30 text-violet-300 shadow-violet-950/20",
+  yellow: "bg-yellow-500/10 border-yellow-500/30 text-yellow-300 shadow-yellow-950/20",
+  slate: "bg-slate-500/10 border-slate-500/30 text-slate-300 shadow-slate-950/20",
+};
+
 const STATUS_DESCRIPTIONS = {
   disconnected: {
     label: "OFFLINE",
@@ -73,7 +90,10 @@ function Dashboard() {
   const glowColor = useStore((state) => state.glowColor);
   const isCameraActive = useStore((state) => state.isCameraActive);
   const sifraTranscript = useStore((state) => state.sifraTranscript);
+  const userTranscript = useStore((state) => state.userTranscript);
   const memory = useStore((state) => state.memory);
+  const isChatOpen = useStore((state) => state.isChatOpen);
+  const setChatOpen = useStore((state) => state.setChatOpen);
 
   const [welcomeAlert, setWelcomeAlert] = useState(true);
 
@@ -115,12 +135,82 @@ function Dashboard() {
         />
 
         {/* 1. Top Gap/Spacer (Header) */}
-        <div className="h-6 w-full max-w-5xl mx-auto z-30 shrink-0" />
+        <div className="h-4 w-full max-w-7xl mx-auto z-30 shrink-0" />
 
-        {/* 2. SIFRA Cognitive Center (Three.js 3D Orb canvas) */}
-        <main className="flex-grow flex flex-col items-center justify-center relative w-full max-w-5xl mx-auto z-20 gap-3 min-h-0">
-          <Visualizer3D analyser={analyserNode} />
-        </main>
+        {/* 2. SIFRA Cognitive Center (Grid Split of Three.js 3D Orb & ChatConsole) */}
+        <div className="flex-grow w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 z-20 min-h-0 items-stretch my-2 px-4">
+          
+          {/* Main Visualizer Left Pane */}
+          <main className={`flex flex-col items-center justify-center relative min-h-0 ${isChatOpen ? "lg:col-span-7" : "lg:col-span-12"} transition-all duration-500`}>
+            <Visualizer3D analyser={analyserNode} />
+            
+            {/* Holographic Cinematic Subtitles / Text Captions overlay */}
+            <div className="w-full max-w-xl px-4 min-h-[50px] mt-4 flex flex-col justify-center items-center text-center select-text">
+              <AnimatePresence mode="wait">
+                {sifraTranscript ? (
+                  <motion.div
+                    key="sifra-cap"
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <span style={{ letterSpacing: '2.5px' }} className={`text-[8px] font-mono uppercase tracking-[3px] opacity-70 mb-0.5 ${
+                      glowColor === "rose" ? "text-rose-400" : "text-cyan-400"
+                    }`}>
+                      KOMAL
+                    </span>
+                    <p className="text-xs md:text-sm font-sans font-medium text-white/95 leading-relaxed drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+                      {sifraTranscript}
+                    </p>
+                  </motion.div>
+                ) : userTranscript ? (
+                  <motion.div
+                    key="user-cap"
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <span style={{ letterSpacing: '2.5px' }} className="text-[8px] font-mono text-gray-500 uppercase tracking-[3px] mb-0.5">
+                      YOU
+                    </span>
+                    <p className="text-xs md:text-xs font-sans text-gray-400 leading-relaxed drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] italic">
+                      "{userTranscript}"
+                    </p>
+                  </motion.div>
+                ) : isConnected ? (
+                  <motion.div
+                    key="listening-cap"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 0.3 }}
+                    exit={{ opacity: 0 }}
+                    className="text-[9px] font-mono text-gray-500 uppercase tracking-[3px]"
+                  >
+                    {status === "listening" ? "Listening to your voice..." : "Speaking..."}
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          </main>
+
+          {/* Chat Console Right Pane */}
+          <AnimatePresence>
+            {isChatOpen && (
+              <motion.div 
+                initial={{ opacity: 0, x: 50, scale: 0.95 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 50, scale: 0.95 }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+                className="lg:col-span-5 h-full min-h-[300px] lg:min-h-0 max-h-[45vh] lg:max-h-[60vh] flex flex-col z-20"
+              >
+                <ChatConsole />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* Live HUD activity nodes in the bottom-left corner */}
         <div id="sifra-status-hud" className="absolute bottom-10 left-10 z-50 pointer-events-auto">
@@ -200,8 +290,24 @@ function Dashboard() {
         </div>
 
         {/* 4. Glass Control Dock (Footer) */}
-        <footer className="w-full max-w-5xl mx-auto flex flex-col gap-4 z-30 shrink-0">
+        <footer className="w-full max-w-7xl mx-auto flex flex-col gap-4 z-30 shrink-0 relative">
           <Controls onStartCall={startCall} onEndCall={endCall} />
+
+          {/* Floating Chat Panel Toggle button inside the container */}
+          <div id="sifra-chat-toggle" className="absolute bottom-3 right-0 z-50 pointer-events-auto hidden md:block">
+            <button
+              onClick={() => setChatOpen(!isChatOpen)}
+              style={{ letterSpacing: '2.5px' }}
+              className={`text-[9px] font-mono uppercase px-4 py-2 rounded-full border flex items-center gap-2 tracking-widest backdrop-blur-md shadow-2xl transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer ${
+                isChatOpen 
+                  ? TOGGLE_BUTTON_THEME_MAP[glowColor] || TOGGLE_BUTTON_THEME_MAP.rose
+                  : "bg-white/10 border-white/10 text-gray-400 hover:bg-white/15"
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isChatOpen ? "bg-emerald-500 animate-pulse" : "bg-gray-500"}`} />
+              {isChatOpen ? "CLOSE FEED" : "OPEN FEED"}
+            </button>
+          </div>
         </footer>
     </div>
   );

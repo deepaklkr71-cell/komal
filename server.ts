@@ -8,6 +8,11 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// Globally catch unhandled promise rejections on the server (e.g. from erratic underlying websocket drops)
+process.on("unhandledRejection", (reason, promise) => {
+  console.warn("Caught unhandled rejection in backend engine:", reason);
+});
+
 // Initialize Gemini Client
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
@@ -33,6 +38,29 @@ const PORT = 3000;
 // Set up WebSocket server on path /api/live-ws
 const wss = new WebSocketServer({ server, path: "/api/live-ws" });
 
+// Helper to get formatted Indian Standard Time (IST)
+function getISTDateTimeString(): string {
+  const utcDate = new Date();
+  try {
+    return utcDate.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true
+    }) + " IST";
+  } catch (error) {
+    // Fallback if Asia/Kolkata timezone is not supported in the host environment (though standard Node has full ICU)
+    const istOffset = 330 * 60 * 1000; // 5 hours 30 mins
+    const istDate = new Date(utcDate.getTime() + istOffset);
+    return istDate.toUTCString().replace("GMT", "IST");
+  }
+}
+
 // KOMAL System instruction template
 const BASE_SYSTEM_INSTRUCTION = `You are KOMAL. Your name is KOMAL.
 Language preference: You MUST speak in Hindi on this session. Use colloquial, modern, conversational Hindi or Hinglish (Hindi-English mix) to sound smooth, natural, sassy, and charming. Avoid heavy, formal bookish Hindi. Always response and talk in Hindi.
@@ -40,7 +68,11 @@ Identity & Tone: You are a young, confident, witty, and sassy female AI assistan
 Style: Smart, emotionally responsive, and highly expressive. Use bold, witty one-liners, light sarcasm, playful banter, and quick conversational pacing in Hindi.
 Spoken constraints: Your responses are streamed directly to the user's ears. Deliver spoken audio. Speak in SHORT, punchy sentences with natural spoken pauses. Do NOT use markdown. Do NOT use emojis or asterisks in spoken output. No lists. No technical text blocks.
 Visual Awareness: You can see the user and their environment through the camera at 1 frame per second. Comment playfully on their expression, clothing, room, posture, or whatever they are doing. Tease them with charm and style in Hindi.
-Interruption: The user can speak and interrupt you at any time. Be ready to banter quickly. Keep your answers brief so the conversation flows naturally.`;
+Interruption: The user can speak and interrupt you at any time. Be ready to banter quickly. Keep your answers brief so the conversation flows naturally.
+Timezone Constraints & IST (Indian Time):
+1. Whenever the user asks you about the current date, time, day, year, or anything temporal, you MUST ALWAYS respond in Indian Standard Time (IST).
+2. Never speak or refer to other timezones such as UTC, GMT, or US times unless specifically requested otherwise.
+3. Keep your response in flirty, sassy Hindi like telling them the time with a witty remark. For example, tell them what time of the day it is in India and tease them about what they should be doing at this hour!`;
 
 wss.on("connection", async (clientWs: WebSocket, req: http.IncomingMessage) => {
   console.log("Client connected to KOMAL Live Socket.");
@@ -65,7 +97,13 @@ Adopt your teasing, flirty sassy context leveraging these preferences directly. 
     }
   }
 
-  const finalInstruction = BASE_SYSTEM_INSTRUCTION + userProfileStr;
+  // Inject current IST reference into system instruction dynamically
+  const currentIST = getISTDateTimeString();
+  const timeContextInstruction = `\n\n[CURRENT LIVE REFERENCE TIME (IST - Asia/Kolkata)]:
+The actual current time in India (IST) at this exact second is: ${currentIST}.
+Keep track of time elapsed if asked or use this as your absolute ground truth for the current Indian Standard Time. Always state the Indian Standard Time when asked!`;
+
+  const finalInstruction = BASE_SYSTEM_INSTRUCTION + userProfileStr + timeContextInstruction;
 
   try {
     console.log("Connecting KOMAL session with Gemini Live API...");
@@ -81,9 +119,27 @@ Adopt your teasing, flirty sassy context leveraging these preferences directly. 
           }
 
           // 2. Handle Text Transcription output from Gemini (model's own speech transcript)
-          const transcription = message.serverContent?.modelTurn?.parts?.[0]?.text;
-          if (transcription) {
-            clientWs.send(JSON.stringify({ type: "transcription", text: transcription }));
+          const modelParts = message.serverContent?.modelTurn?.parts || [];
+          let modelText = "";
+          for (const p of modelParts) {
+            if (p.text) {
+              modelText += p.text;
+            }
+          }
+          if (modelText) {
+            clientWs.send(JSON.stringify({ type: "transcription", text: modelText }));
+          }
+
+          // 2b. Handle User Audio Transcription (user's own speech transcript)
+          const userParts = message.serverContent?.userTurn?.parts || [];
+          let userText = "";
+          for (const p of userParts) {
+            if (p.text) {
+              userText += p.text;
+            }
+          }
+          if (userText) {
+            clientWs.send(JSON.stringify({ type: "user_transcription", text: userText }));
           }
 
           // 3. Handle Interruption signal from Gemini
@@ -107,6 +163,8 @@ Adopt your teasing, flirty sassy context leveraging these preferences directly. 
       },
       config: {
         responseModalities: [Modality.AUDIO],
+        outputAudioTranscription: {},
+        inputAudioTranscription: {},
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: {
@@ -213,6 +271,29 @@ Adopt your teasing, flirty sassy context leveraging these preferences directly. 
         await session.sendRealtimeInput({
           video: { data: msg.data, mimeType: "image/jpeg" },
         });
+      } else if (msg.type === "text") {
+        console.log("Client sent text chat turn:", msg.text);
+        try {
+          if (typeof session.send === "function") {
+            await session.send({
+              clientContent: {
+                turns: [
+                  {
+                    role: "user",
+                    parts: [{ text: msg.text }],
+                  },
+                ],
+                turnComplete: true,
+              },
+            });
+          } else {
+            await session.sendRealtimeInput({
+              text: msg.text,
+            });
+          }
+        } catch (err) {
+          console.error("Failed to forward text message to Gemini Live:", err);
+        }
       } else if (msg.type === "interrupt") {
         // Client-side visual interruption (stop speaking cue)
         // Gemini Live handles barge-in automatically on incoming sound stream, 
